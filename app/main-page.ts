@@ -1,31 +1,64 @@
-/*
-In NativeScript, a file with the same name as an XML file is known as
-a code-behind file. The code-behind is a great place to place your view
-logic, and to set up your page’s data binding.
-*/
-
 import { EventData } from "tns-core-modules/data/observable";
 import { Page } from "tns-core-modules/ui/page";
 import { HelloWorldModel } from "./main-view-model";
+import * as fs from "@nativescript/core/file-system";
 
-// Event handler for Page "navigatingTo" event attached in main-page.xml
+function utf8ToString(h: Uint8Array, p: number) {
+    let s = "";
+    for (let i = p; h[i]; i++) {
+        s += String.fromCharCode(h[i]);
+    }
+    return s;
+}
+
 export function navigatingTo(args: EventData) {
-    /*
-    This gets a reference this page’s <Page> UI component. You can
-    view the API reference of the Page to see what’s available at
-    https://docs.nativescript.org/api-reference/classes/_ui_page_.page.html
-    */
     const page = <Page>args.object;
-
-    /*
-    A page’s bindingContext is an object that should be used to perform
-    data binding between XML markup and TypeScript code. Properties
-    on the bindingContext can be accessed using the {{ }} syntax in XML.
-    In this example, the {{ message }} and {{ onTap }} bindings are resolved
-    against the object returned by createViewModel().
-
-    You can learn more about data binding in NativeScript at
-    https://docs.nativescript.org/core-concepts/data-binding.
-    */
     page.bindingContext = new HelloWorldModel();
+}
+
+export function loadWasm() {
+    let buffer;
+    const importObject = {
+        env: {
+            memoryBase: 0,
+            tableBase: 0,
+            memory: new WebAssembly.Memory({
+                initial: 256,
+                maximum: 512
+            }),
+            table: new WebAssembly.Table({
+                initial: 0,
+                element: "anyfunc"
+            }),
+            puts(index) {
+                console.log(utf8ToString(buffer, index));
+            }
+        }
+    };
+
+    const filePath = `${fs.knownFolders.currentApp().path}/assets/test.wasm`;
+
+    const file = fs.File.fromPath(filePath);
+
+    const data = file.readSync();
+    const wasmCode = new Uint8Array(data);
+
+    const r = new Date();
+    WebAssembly.instantiate(wasmCode, importObject)
+        .then(results => {
+            global["wasmResult"] = results;
+            console.log("results", r, results);
+            return results.instance;
+        })
+        .then(instance => {
+            console.log("instance", r, instance);
+            global["wasmInstance"] = instance;
+
+            buffer = new Uint8Array((instance.exports.memory as any).buffer);
+            return instance.exports.main as () => number;
+        })
+        .then(main => main())
+        .catch(err => {
+            console.error(err, r);
+        });
 }
