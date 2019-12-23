@@ -20,16 +20,6 @@ export function loadWasm() {
     let buffer;
     const importObject = {
         env: {
-            memoryBase: 0,
-            tableBase: 0,
-            memory: new WebAssembly.Memory({
-                initial: 256,
-                maximum: 512
-            }),
-            table: new WebAssembly.Table({
-                initial: 0,
-                element: "anyfunc"
-            }),
             puts(index) {
                 console.log(utf8ToString(buffer, index));
             }
@@ -40,25 +30,25 @@ export function loadWasm() {
 
     const file = fs.File.fromPath(filePath);
 
-    const data = file.readSync();
-    const wasmCode = new Uint8Array(data);
+    const wasmCode = new Uint8Array(file.readSync());
 
-    const r = new Date();
-    WebAssembly.instantiate(wasmCode, importObject)
-        .then(results => {
-            global["wasmResult"] = results;
-            console.log("results", r, results);
-            return results.instance;
+    const r = new Date().toISOString();
+
+    const p = WebAssembly.compile(wasmCode)
+        .then(wasmModule => {
+            console.log(wasmModule);
+
+            return WebAssembly.instantiate(wasmModule, importObject);
         })
         .then(instance => {
-            console.log("instance", r, instance);
             global["wasmInstance"] = instance;
 
             buffer = new Uint8Array((instance.exports.memory as any).buffer);
             return instance.exports.main as () => number;
         })
-        .then(main => main())
-        .catch(err => {
-            console.error(err, r);
+        .then(main => {
+            console.log("call main", main());
         });
+
+    console.log("promise", r, p);
 }
